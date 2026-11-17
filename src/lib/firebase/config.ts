@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, initializeAuth, connectAuthEmulator, browserLocalPersistence, indexedDBLocalPersistence, type Auth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
@@ -15,7 +15,18 @@ const firebaseConfig = {
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-export const auth = getAuth(app);
+// Prefer localStorage over IndexedDB: Firebase Auth's IndexedDB path can throw
+// "Database is closing/hidden" during startup, which leaves onAuthStateChanged
+// unfired and the dashboard stuck on its loading spinner.
+function createAuth(): Auth {
+  if (typeof window === 'undefined') return getAuth(app);
+  try {
+    return initializeAuth(app, { persistence: [browserLocalPersistence, indexedDBLocalPersistence] });
+  } catch {
+    return getAuth(app); // already initialised (HMR / second import)
+  }
+}
+export const auth = createAuth();
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'asia-south1');
