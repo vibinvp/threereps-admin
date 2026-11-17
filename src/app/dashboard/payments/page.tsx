@@ -71,7 +71,7 @@ export default function PaymentsPage() {
     if (!reason.trim()) { toast.error("A reason is required."); return; }
     setIsProcessing(true);
     try {
-      const refund = httpsCallable(functions, "adminRefundPayment");
+      const refund = httpsCallable(functions, "adminQueuePaymentRefund");
       await refund({ paymentSessionId: selectedPayment.id, reason: reason.trim() });
       toast.success("Refund queued. The status updates once the refund worker processes it.");
       queryClient.invalidateQueries({ queryKey: ["payment_sessions"] });

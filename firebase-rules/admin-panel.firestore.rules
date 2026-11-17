@@ -45,7 +45,7 @@ match /adminNotifications/{id} { allow read: if isAdmin(); allow write: if false
 match /slot_locks/{id}         { allow read: if isAdmin(); allow write: if false; }
 
 // Money + support records: admins read; ALL mutations go through Cloud Functions
-// (adminRefundPayment, adminFlagLedgerEntry, adminUpdateSupportTicket), which enforce roles.
+// (adminQueuePaymentRefund, adminFlagLedgerEntry, adminUpdateSupportTicket), which enforce roles.
 // If the mobile apps write support_tickets (users creating tickets), keep that rule and
 // only remove the admin client write.
 match /ledger/{id}             { allow read: if isAdmin(); allow write: if false; }

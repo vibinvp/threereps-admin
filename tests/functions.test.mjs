@@ -81,7 +81,7 @@ test('ticket input validation', async () => {
 test('finance cannot edit tickets; support cannot flag ledger or refund', async () => {
   assert.equal((await call('adminUpdateSupportTicket', fin.token, { ticketId: 't1', status: 'Pending' })).status, 403);
   assert.equal((await call('adminFlagLedgerEntry', sup.token, { ledgerId: 'l1', note: 'x' })).status, 403);
-  assert.equal((await call('adminRefundPayment', sup.token, { paymentSessionId: 'ps1', reason: 'x' })).status, 403);
+  assert.equal((await call('adminQueuePaymentRefund', sup.token, { paymentSessionId: 'ps1', reason: 'x' })).status, 403);
 });
 test('finance can flag a ledger entry without changing status', async () => {
   const r = await call('adminFlagLedgerEntry', fin.token, { ledgerId: 'l1', note: 'webhook missing' });
@@ -92,14 +92,14 @@ test('finance can flag a ledger entry without changing status', async () => {
   assert.equal((await call('adminFlagLedgerEntry', fin.token, { ledgerId: 'l1', note: '' })).status, 400);
 });
 test('refund queues once, never edits payment status, and blocks duplicates', async () => {
-  const r = await call('adminRefundPayment', fin.token, { paymentSessionId: 'ps1', reason: 'customer request' });
+  const r = await call('adminQueuePaymentRefund', fin.token, { paymentSessionId: 'ps1', reason: 'customer request' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const q = await get('manual_refund_queue/pay_1');
   assert.equal(q.fields.status.stringValue, 'pending');
   assert.equal(q.fields.bookingId.stringValue, 'b1');
   assert.equal((await get('payment_sessions/ps1')).fields.status.stringValue, 'Captured');
-  const dup = await call('adminRefundPayment', fin.token, { paymentSessionId: 'ps1', reason: 'again' });
+  const dup = await call('adminQueuePaymentRefund', fin.token, { paymentSessionId: 'ps1', reason: 'again' });
   assert.equal(dup.status, 409);
-  const noReason = await call('adminRefundPayment', sa.token, { paymentSessionId: 'ps1', reason: '' });
+  const noReason = await call('adminQueuePaymentRefund', sa.token, { paymentSessionId: 'ps1', reason: '' });
   assert.equal(noReason.status, 400);
 });

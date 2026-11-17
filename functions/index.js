@@ -244,12 +244,12 @@ exports.adminRequestRefund = onCall(async (request) => {
 });
 
 /**
- * adminRefundPayment
+ * adminQueuePaymentRefund
  * Refund entry point for the Payments page: resolves the booking that owns a
  * payment session, then queues the refund through the same verified path.
  * It never edits payment_sessions.status; the refund worker does that.
  */
-exports.adminRefundPayment = onCall(async (request) => {
+exports.adminQueuePaymentRefund = onCall(async (request) => {
   const adminIdentity = await validateAdmin(request.auth);
   requireRole(adminIdentity, ["admin", "finance"]);
   const { paymentSessionId, reason } = request.data || {};
