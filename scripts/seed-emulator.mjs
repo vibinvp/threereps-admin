@@ -38,7 +38,9 @@ await put('payment_sessions/order_demo_1', { orderId: 'order_demo_1', paymentId:
 await put('bookings/b1', { paymentId: 'pay_demo_1', orderId: 'order_demo_1', amount: 150000, bookingReference: 'REF-DEMO', paymentSnapshot: { amount: 150000 } });
 await put('audit_logs/a1', { action: 'seed', entity: 'demo', adminName: 'Seeder', reason: 'sample row' });
 // Manual-booking fixtures: trainer + tier pricing + schedule + GST
-await put('trainers/demo_trainer', { name: 'Demo Trainer', status: 'active', isPaused: false, tierId: 'demo_gold', availability: { mon_sat: ['7 AM', '8 AM', '5 PM'], mon_wed_fri: ['7 AM', '6 PM'] } });
+await put('trainers/demo_trainer', { name: 'Demo Trainer', status: 'active', isPaused: false, tierId: 'demo_gold', availability: { 'Mon-Sat': ['7 AM', '8 AM', '5 PM'], 'Mon-Wed-Fri': ['7 AM', '6 PM'], 'Tue-Thu-Sat': ['7 AM'] } });
+await put('trainers/demo_trainer2', { name: 'Second Demo Trainer', status: 'active', isPaused: false, tierId: 'demo_gold', availability: { 'Mon-Sat': ['9 AM', '7 AM', '6 PM'] } });
+await put('trainers/demo_trainer3', { name: 'Trainer Without Slots', status: 'active', isPaused: false, tierId: 'demo_gold', availability: {} });
 await put('trainer_tiers/demo_gold', {
   name: 'Gold', displayName: 'Gold', isActive: true, position: 1,
   pricing: { subscriptions: { individual: {

@@ -66,9 +66,12 @@ before(async () => {
   await put(`admins/${ops.uid}`, { email: 'mb_ops@t.com', role: 'ops', isActive: true, name: 'Ops' });
   await put(`admins/${fin.uid}`, { email: 'mb_fin@t.com', role: 'finance', isActive: true, name: 'Fin' });
   await put(`admins/${sup.uid}`, { email: 'mb_sup@t.com', role: 'support', isActive: true, name: 'Sup' });
-  await put('trainers/mb_trainer', { name: 'Test Trainer', status: 'active', isPaused: false, tierId: 'mb_gold', availability: { mon_sat: ['7 AM', '8 AM'] } });
+  await put('trainers/mb_trainer', { name: 'Test Trainer', status: 'active', isPaused: false, tierId: 'mb_gold', availability: { 'Mon-Wed-Fri': ['6 PM'], 'Tue-Thu-Sat': ['6 PM'], 'Mon-Sat': ['7 AM', '8 AM'] } });
   await put('trainers/mb_trainer2', { name: 'Second Trainer', status: 'active', isPaused: false, tierId: 'mb_gold', availability: { mon_sat: ['7 AM'] } });
   await put('trainers/mb_trainer3', { name: 'Third Trainer', status: 'active', isPaused: false, tierId: 'mb_gold', availability: { mon_sat: ['7 AM'] } });
+  await put('trainers/mb_trainer4', { name: 'MWF Only Trainer', status: 'active', isPaused: false, tierId: 'mb_gold', availability: { 'Mon-Wed-Fri': ['7 AM'] } });
+  await put('trainers/mb_trainer5', { name: 'Fifth Trainer', status: 'active', isPaused: false, tierId: 'mb_gold', availability: { 'Mon-Sat': ['5 PM', '8 AM', '7 AM', 'garbage', '9'] } });
+  await put('trainers/mb_trainer6', { name: 'No Availability Trainer', status: 'active', isPaused: false, tierId: 'mb_gold' });
   await put('trainer_tiers/mb_gold', {
     name: 'Gold', displayName: 'Gold', isActive: true, position: 1,
     pricing: { subscriptions: { individual: { mon_sat: [{ active: true, durationValue: 1, durationType: 'month', price: 1000, title: 'Mon-Sat 1 month' }] } } },
@@ -251,4 +254,56 @@ test('two simultaneous requests for the same slot: exactly one wins, no double b
   assert.equal(locks.length, 24);
   assert.ok(locks.every((l) => l.bookingId === winner));
   assert.equal((await list('sessions')).filter((x) => x.trainerId === 'mb_trainer3').length, 24);
+});
+
+// ---------- availability keyed by display name (real data) + per-slot availability ----------
+test('slots are found when availability is keyed by display name ("Mon-Sat") not id ("mon_sat")', async () => {
+  const { slotTime, ...noSlot } = base;
+  const r = await call('adminPreviewManualBooking', ops.token, { ...noSlot, trainerId: 'mb_trainer5' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  // sorted by hour, entries without AM/PM ignored
+  assert.deepEqual(r.body.result.slots.map((x) => x.slotTime), ['7 AM', '8 AM', '5 PM']);
+  assert.ok(r.body.result.slots.every((x) => x.available && x.conflicts.length === 0));
+  assert.equal(r.body.result.totalAmount, 1180);
+});
+
+test('after a booking, that slot is listed as unavailable while the others stay free', async () => {
+  const b = await call('adminCreateManualBooking', ops.token, {
+    ...base, trainerId: 'mb_trainer5', slotTime: '8 AM', userId: 'mb_existing_user', clientRequestId: 'req-slotlist-01', paymentMethod: 'cash', amountReceived: 1180,
+  });
+  assert.equal(b.status, 200, JSON.stringify(b.body));
+  const { slotTime, ...noSlot } = base;
+  const r = await call('adminPreviewManualBooking', ops.token, { ...noSlot, trainerId: 'mb_trainer5' });
+  const by = Object.fromEntries(r.body.result.slots.map((x) => [x.slotTime, x]));
+  assert.equal(by['8 AM'].available, false);
+  assert.equal(by['8 AM'].conflicts.length, 24);
+  assert.equal(by['7 AM'].available, true);
+  assert.equal(by['5 PM'].available, true);
+});
+
+test('switching trainer shows that trainer\'s own slots', async () => {
+  const { slotTime, ...noSlot } = base;
+  const a = await call('adminPreviewManualBooking', ops.token, { ...noSlot, trainerId: 'mb_trainer' });
+  const b = await call('adminPreviewManualBooking', ops.token, { ...noSlot, trainerId: 'mb_trainer5' });
+  assert.deepEqual(a.body.result.slots.map((x) => x.slotTime), ['7 AM', '8 AM']);
+  assert.deepEqual(b.body.result.slots.map((x) => x.slotTime), ['7 AM', '8 AM', '5 PM']);
+});
+
+test('trainer with no slots for the schedule: listing is empty and booking is refused with a clear message', async () => {
+  const { slotTime, ...noSlot } = base;
+  const list = await call('adminPreviewManualBooking', ops.token, { ...noSlot, trainerId: 'mb_trainer4' }); // MWF only, schedule Mon-Sat
+  assert.equal(list.status, 200, JSON.stringify(list.body));
+  assert.deepEqual(list.body.result.slots, []);
+  const create = await call('adminCreateManualBooking', ops.token, { ...base, trainerId: 'mb_trainer4', userId: 'mb_existing_user', clientRequestId: 'req-noslots-001', paymentMethod: 'cash', amountReceived: 1180 });
+  assert.equal(create.status, 400);
+  assert.match(create.body.error.message, /no time slots set/i);
+  const none = await call('adminCreateManualBooking', ops.token, { ...base, trainerId: 'mb_trainer6', userId: 'mb_existing_user', clientRequestId: 'req-noavail-001', paymentMethod: 'cash', amountReceived: 1180 });
+  assert.equal(none.status, 400);
+  assert.match(none.body.error.message, /no time slots set/i);
+});
+
+test('a slot the trainer does not offer is rejected even when other slots exist', async () => {
+  const r = await call('adminCreateManualBooking', ops.token, { ...base, trainerId: 'mb_trainer5', slotTime: '6 AM', userId: 'mb_existing_user', clientRequestId: 'req-notoffered1', paymentMethod: 'cash', amountReceived: 1180 });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error.message, /does not offer/i);
 });

@@ -122,22 +122,48 @@ async function ensureClient(db, who, e164, fullName) {
   return uid;
 }
 
-function assertSlotOffered(trainerData, pricing, slotTime) {
-  const availability = trainerData.availability || {};
-  const lists = pricing.bookingType === "trial"
-    ? Object.values(availability).filter(Array.isArray)
-    : [availability[pricing.canonicalScheduleId]].filter(Array.isArray);
-  const offered = lists.flat();
-  if (offered.length > 0 && !offered.some((t) => isSameSlotHour(slotTime, { slotTime: t }))) {
-    throw new HttpsError("failed-precondition", `${pricing.trainerData.name || "This trainer"} does not offer the ${slotTime} slot for this schedule.`);
+const norm = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Slots a trainer offers for a schedule. The trainer app keys `availability` by DISPLAY NAME
+ * ("Mon-Wed-Fri", "Tue-Thu-Sat", "Mon-Sat") while session_patterns ids are "mon_wed_fri" etc.,
+ * so match on a normalised name against every identifier we know for the schedule.
+ * Trials (no schedule) accept any slot the trainer offers.
+ */
+function offeredSlots(trainerData, pricing, d) {
+  const availability = (trainerData && trainerData.availability) || {};
+  const lists = [];
+  if (pricing.bookingType === "trial") {
+    for (const v of Object.values(availability)) if (Array.isArray(v)) lists.push(v);
+  } else {
+    const wanted = new Set([pricing.canonicalScheduleId, pricing.canonicalScheduleName, d.scheduleId, d.scheduleName].map(norm).filter(Boolean));
+    for (const [key, v] of Object.entries(availability)) if (Array.isArray(v) && wanted.has(norm(key))) lists.push(v);
+  }
+  const uniq = [];
+  for (const t of lists.flat()) {
+    if (typeof t !== "string" || !slotLockKey(t)) continue; // ignore entries without a readable AM/PM
+    if (!uniq.some((u) => isSameSlotHour(t, { slotTime: u }))) uniq.push(t);
+  }
+  return uniq.sort((x, y) => slotLockKey(x).localeCompare(slotLockKey(y)));
+}
+
+function assertSlotOffered(trainerData, pricing, d) {
+  const offered = offeredSlots(trainerData, pricing, d);
+  const who = (pricing.trainerData && pricing.trainerData.name) || "This trainer";
+  const what = pricing.bookingType === "trial" ? "trials" : (pricing.canonicalScheduleName || "this schedule");
+  if (offered.length === 0) {
+    throw new HttpsError("failed-precondition", `${who} has no time slots set for ${what}. Choose another trainer or schedule.`);
+  }
+  if (!offered.some((t) => isSameSlotHour(d.slotTime, { slotTime: t }))) {
+    throw new HttpsError("failed-precondition", `${who} does not offer the ${d.slotTime} slot for ${what}.`);
   }
 }
 
-function validateInput(d) {
+function validateInput(d, needSlot = true) {
   if (!d.trainerId || typeof d.trainerId !== "string") throw new HttpsError("invalid-argument", "trainerId is required.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.slotDate || "")) throw new HttpsError("invalid-argument", "Start date must be YYYY-MM-DD.");
   if (d.slotDate <= todayIST()) throw new HttpsError("failed-precondition", "Bookings must start tomorrow or later.");
-  if (!d.slotTime || typeof d.slotTime !== "string" || !slotLockKey(d.slotTime)) {
+  if (needSlot && (!d.slotTime || typeof d.slotTime !== "string" || !slotLockKey(d.slotTime))) {
     throw new HttpsError("invalid-argument", 'Slot time must include AM/PM, e.g. "7 AM".');
   }
   const bookingType = d.bookingType === "trial" ? "trial" : "subscription";
@@ -145,8 +171,8 @@ function validateInput(d) {
   return bookingType;
 }
 
-async function priceAndCheck(db, d) {
-  const bookingType = validateInput(d);
+async function priceAndCheck(db, d, needSlot = true) {
+  const bookingType = validateInput(d, needSlot);
   const pricing = await resolveBookingPricing(db, d.trainerId, {
     tierId: d.tierId || undefined,
     planType: d.planType || "individual",
@@ -159,13 +185,13 @@ async function priceAndCheck(db, d) {
   if (pricing.totalSessions > MAX_SESSIONS) {
     throw new HttpsError("failed-precondition", `This plan has ${pricing.totalSessions} sessions; manual bookings support up to ${MAX_SESSIONS}. Use a shorter duration.`);
   }
-  assertSlotOffered(pricing.trainerData, pricing, d.slotTime);
+  if (needSlot) assertSlotOffered(pricing.trainerData, pricing, d);
 
   const gstPercentage = await resolveGstPercentage(db);
   const { gstAmount, totalAmount } = applyGst(pricing.basePrice, gstPercentage);
 
-  const lockKey = slotLockKey(d.slotTime);
-  const slots = pricing.allSessionDates.map((date) => ({
+  const lockKey = needSlot ? slotLockKey(d.slotTime) : null;
+  const slots = !needSlot ? [] : pricing.allSessionDates.map((date) => ({
     slotId: `${d.trainerId}_${date}_${lockKey}`,
     trainerId: d.trainerId,
     slotDate: date,
@@ -196,15 +222,32 @@ exports.adminLookupClient = onCall(async (request) => {
   return { phone: e164, found: !!found, client: found };
 });
 
-/** Read-only: price, GST, session dates and slot conflicts for a proposed manual booking. */
-exports.adminPreviewManualBooking = onCall(async (request) => {
+/** Conflicting session dates for one slot time (empty = free for every session). */
+async function conflictsFor(db, trainerId, dates, slotTime) {
+  const key = slotLockKey(slotTime);
+  const refs = dates.map((date) => db.collection("slot_locks").doc(`${trainerId}_${date}_${key}`));
+  const out = [];
+  for (let i = 0; i < refs.length; i += 300) {
+    const docs = await db.getAll(...refs.slice(i, i + 300));
+    docs.forEach((doc, j) => { if (lockConflict(doc)) out.push(dates[i + j]); });
+  }
+  return out;
+}
+
+/**
+ * Read-only: price, GST, session dates and availability.
+ * - with `slotTime`: conflicts for that slot.
+ * - without it: every slot the trainer offers for this schedule, each with its conflicting dates,
+ *   so the form can show only the hours that are actually free for the whole plan.
+ */
+exports.adminPreviewManualBooking = onCall({ timeoutSeconds: 120 }, async (request) => {
   const who = await validateAdmin(request.auth);
   requireRole(who, ROLES);
   const db = admin.firestore();
-  const c = await priceAndCheck(db, request.data || {});
-  const docs = c.slots.length ? await db.getAll(...c.slots.map((s) => db.collection("slot_locks").doc(s.slotId))) : [];
-  const conflicts = c.slots.filter((_, i) => lockConflict(docs[i])).map((s) => s.slotDate);
-  return {
+  const d = request.data || {};
+  const withSlot = typeof d.slotTime === "string" && d.slotTime.trim() !== "";
+  const c = await priceAndCheck(db, d, withSlot);
+  const summary = {
     trainerName: c.pricing.trainerData.name || null,
     tierName: c.pricing.tierName,
     scheduleName: c.pricing.canonicalScheduleName || null,
@@ -215,9 +258,18 @@ exports.adminPreviewManualBooking = onCall(async (request) => {
     totalSessions: c.pricing.totalSessions,
     firstSession: c.pricing.allSessionDates[0],
     lastSession: c.pricing.allSessionDates[c.pricing.allSessionDates.length - 1],
-    conflicts,
-    available: conflicts.length === 0,
   };
+  if (withSlot) {
+    const conflicts = await conflictsFor(db, d.trainerId, c.pricing.allSessionDates, d.slotTime);
+    return { ...summary, conflicts, available: conflicts.length === 0 };
+  }
+  const offered = offeredSlots(c.pricing.trainerData, c.pricing, d);
+  const slots = [];
+  for (const slotTime of offered) {
+    const conflicts = await conflictsFor(db, d.trainerId, c.pricing.allSessionDates, slotTime);
+    slots.push({ slotTime, available: conflicts.length === 0, conflicts });
+  }
+  return { ...summary, slots };
 });
 
 exports.adminCreateManualBooking = onCall({ timeoutSeconds: 120 }, async (request) => {
