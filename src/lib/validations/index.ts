@@ -99,18 +99,38 @@ export const bookingSchema = z.object({
   expiryDate: z.any().optional(),
   createdAt: z.any().optional(),
   
-  // Snapshots
+  // Snapshots written by the booking engine (all optional; shapes per reconciliation.js)
   trainerSnapshot: z.object({
-    id: z.string().optional(),
-    name: z.string().optional(),
-    tier: z.string().optional(),
-  }).optional(),
+    trainerId: z.string().nullish(),
+    trainerName: z.string().nullish(),
+    name: z.string().nullish(), // legacy
+    tierId: z.string().nullish(),
+    tierName: z.string().nullish(),
+  }).passthrough().optional(),
+  tierSnapshot: z.object({
+    id: z.string().nullish(),
+    name: z.string().nullish(),
+    displayName: z.string().nullish(),
+  }).passthrough().optional(),
   planSnapshot: z.object({
-    dayGroup: z.string().optional(),
-    duration: z.string().optional(),
-    slotTime: z.string().optional(),
-    price: z.number().optional(),
-  }).optional(),
+    title: z.string().nullish(),
+    scheduleName: z.string().nullish(),
+    planType: z.string().nullish(),
+    sessionPerWeek: z.number().nullish(),
+    totalSessions: z.number().nullish(),
+    price: z.number().nullish(),
+    slotTime: z.string().nullish(), // legacy (manual-override form)
+  }).passthrough().nullish(),
+  trialSnapshot: z.object({
+    scheduleName: z.string().nullish(),
+    sessionCount: z.number().nullish(),
+    price: z.number().nullish(),
+  }).passthrough().nullish(),
+  sessionSnapshot: z.object({
+    slotDate: z.string().nullish(),
+    slotTime: z.string().nullish(),
+    slotHour: z.union([z.string(), z.number()]).nullish(),
+  }).passthrough().nullish(),
 });
 
 export const categorySchema = z.object({

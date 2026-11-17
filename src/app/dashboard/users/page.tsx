@@ -40,6 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { bookingTrainerName } from "@/lib/bookings";
 import { Eye, Search, UserMinus, UserCheck, Calendar, Phone, Mail } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -325,7 +326,7 @@ export default function UsersPage() {
                     userBookings.map((b: any) => (
                       <div key={b.id} className="flex items-center justify-between border rounded-lg p-3">
                         <div className="flex flex-col">
-                          <span className="text-sm font-medium">{b.bookingReference || `#${b.id.slice(-6)}`} · {b.trainerName || 'Unassigned'}</span>
+                          <span className="text-sm font-medium">{b.bookingReference || `#${b.id.slice(-6)}`} · {bookingTrainerName(b)}</span>
                           <span className="text-xs text-muted-foreground">
                             {b.createdAt?.toDate ? b.createdAt.toDate().toLocaleDateString() : 'Unknown date'} · {b.completedSessions ?? 0}/{b.totalSessions ?? 0} sessions
                           </span>

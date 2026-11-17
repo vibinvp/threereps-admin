@@ -56,6 +56,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { functions } from "@/lib/firebase/config";
 import { httpsCallable } from "firebase/functions";
+import { bookingTrainerName, bookingTierName, bookingPlanLabel, bookingTypeLabel, bookingSlotTime } from "@/lib/bookings";
 import { toast } from "sonner";
 
 // Server-side status filter per tab, so a tab switch never has to pull the
@@ -170,9 +171,9 @@ export default function BookingsPage() {
       header: "Trainer",
       cell: ({ row }) => (
         <div className="flex flex-col items-start gap-1">
-          <span className="text-sm font-medium">{row.original.trainerName}</span>
-          {row.original.tier && (
-            <Badge variant="outline" className="text-[10px] h-4 py-0">{row.original.tier}</Badge>
+          <span className="text-sm font-medium">{bookingTrainerName(row.original)}</span>
+          {bookingTierName(row.original) && (
+            <Badge variant="outline" className="text-[10px] h-4 py-0">{bookingTierName(row.original)}</Badge>
           )}
         </div>
       )
@@ -181,7 +182,12 @@ export default function BookingsPage() {
       id: "schedule",
       header: "Schedule",
       cell: ({ row }) => (
-        <span className="text-sm">{row.original.slotTime || "N/A"} ({row.original.sessionPattern || "N/A"})</span>
+        <div className="flex flex-col">
+          <span className="text-sm">{bookingPlanLabel(row.original) ?? "N/A"}</span>
+          <span className="text-xs text-muted-foreground">
+            {[bookingTypeLabel(row.original), bookingSlotTime(row.original)].filter(Boolean).join(" · ") || "N/A"}
+          </span>
+        </div>
       )
     },
     {
@@ -272,11 +278,8 @@ export default function BookingsPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Booking Engine</h1>
-          <p className="text-muted-foreground">Manage lifecycles, monitor progress, and override assignments.</p>
+          <p className="text-muted-foreground">Monitor bookings and progress. Open a booking to add notes, change the trainer, cancel or request a refund.</p>
         </div>
-        <Link href="/dashboard/bookings/new" className={buttonVariants()}>
-          <Plus className="h-4 w-4 mr-2" /> Manual Override
-        </Link>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => v && handleTabChange(v)} className="w-full">
