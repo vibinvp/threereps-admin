@@ -4,8 +4,20 @@
     {
       "name": "admin-next",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "admin-next-emulators",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:emu"
+      ],
+      "port": 3150
     }
   ]
 }

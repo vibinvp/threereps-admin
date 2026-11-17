@@ -26,6 +26,10 @@ function isAdmin() {
 
 function isSuperAdmin() { return isAdmin() && adminDoc().role == 'superadmin'; }
 
+// Mirrors src/lib/permissions.ts ROUTE_ROLES.
+function isFullAdmin()  { return isAdmin() && adminDoc().role in ['superadmin', 'admin']; }
+function isOpsAdmin()   { return isAdmin() && adminDoc().role in ['superadmin', 'admin', 'ops']; }
+
 // ---- Admin-only collections (full definitions) -------------------------------
 
 match /admins/{adminId} {
@@ -49,15 +53,15 @@ match /payment_sessions/{id}   { allow read: if isAdmin(); allow write: if false
 match /support_tickets/{id}    { allow read: if isAdmin(); allow write: if false; }
 
 // Content managed from the panel; public read where the apps/website need it.
-match /landing_page/{id}       { allow read: if true; allow write: if isAdmin(); }
-match /cms/{id}                { allow read: if true; allow write: if isAdmin(); }
-match /legal_content/{id}      { allow read: if true; allow write: if isAdmin(); }
-match /banners/{id}            { allow read: if true; allow write: if isAdmin(); }
-match /languages/{id}          { allow read: if true; allow write: if isAdmin(); }
-match /service_areas/{id}      { allow read: if true; allow write: if isAdmin(); }
-match /categories/{id}         { allow read: if true; allow write: if isAdmin(); }
-match /session_patterns/{id}   { allow read: if true; allow write: if isAdmin(); }
-match /trainer_tiers/{id}      { allow read: if true; allow write: if isAdmin(); }
+match /landing_page/{id}       { allow read: if true; allow write: if isFullAdmin(); }
+match /cms/{id}                { allow read: if true; allow write: if isFullAdmin(); }
+match /legal_content/{id}      { allow read: if true; allow write: if isFullAdmin(); }
+match /banners/{id}            { allow read: if true; allow write: if isOpsAdmin(); }
+match /languages/{id}          { allow read: if true; allow write: if isOpsAdmin(); }
+match /service_areas/{id}      { allow read: if true; allow write: if isOpsAdmin(); }
+match /categories/{id}         { allow read: if true; allow write: if isOpsAdmin(); }
+match /session_patterns/{id}   { allow read: if true; allow write: if isFullAdmin(); }
+match /trainer_tiers/{id}      { allow read: if true; allow write: if isFullAdmin(); }
 
 // ---- Shared with the mobile apps: ADD `|| isAdmin()` to the existing rules ---
 //   users, trainers, bookings, sessions, attendance

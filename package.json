@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-threereps \"node --test tests/rules.test.mjs\"",
+    "test:functions": "firebase emulators:exec --only auth,firestore,functions --project demo-threereps \"node --test tests/functions.test.mjs\"",
+    "test": "npm run test:rules && npm run test:functions",
+    "emulators": "firebase emulators:start --only auth,firestore,functions --project demo-threereps",
+    "dev:emu": "NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-threereps NEXT_PUBLIC_FIREBASE_API_KEY=fake-api-key FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 next dev -p 3150"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -16,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.17.1",
+    "firebase-admin": "^13.10.0",
     "lucide-react": "^1.28.0",
     "next": "16.3.0",
     "next-themes": "^0.4.6",
@@ -31,6 +37,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
