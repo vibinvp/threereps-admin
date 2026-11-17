@@ -2,7 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { useFirestoreQuery } from "@/lib/hooks/useFirestoreQuery";
-import { useFirestoreMutation } from "@/lib/hooks/useFirestoreMutation";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "@/lib/firebase/config";
+import { useQueryClient } from "@tanstack/react-query";
+import { Textarea } from "@/components/ui/textarea";
 import {
   flexRender,
   getCoreRowModel,
@@ -25,7 +28,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Ledger } from "@/types";
 import { toast } from "sonner";
-import { Search, AlertTriangle, ArrowRightLeft } from "lucide-react";
+import { downloadCsv, toDate } from "@/lib/csv";
+import { Search, AlertTriangle, ArrowRightLeft, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +46,8 @@ export default function LedgerPage() {
     []
   );
 
-  const { update } = useFirestoreMutation('ledger');
+  const queryClient = useQueryClient();
+  const [note, setNote] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -66,19 +71,18 @@ export default function LedgerPage() {
 
   const handleRecovery = async () => {
     if (!selectedLedger) return;
+    if (!note.trim()) { toast.error("A note is required."); return; }
     setIsProcessing(true);
     try {
-      // Simulate webhook sync / slot unlocking
-      await update.mutateAsync({
-        id: selectedLedger.id,
-        status: 'success',
-        description: `${selectedLedger.description || ''} (Recovered via Admin)`
-      });
-      toast.success(`Transaction ${selectedLedger.transactionId} recovered successfully.`);
+      const flag = httpsCallable(functions, "adminFlagLedgerEntry");
+      await flag({ ledgerId: selectedLedger.id, note: note.trim() });
+      toast.success(`Transaction ${selectedLedger.transactionId} flagged for reconciliation.`);
+      queryClient.invalidateQueries({ queryKey: ["ledger"] });
       setIsRecoveryOpen(false);
       setSelectedLedger(null);
-    } catch (error) {
-      toast.error("Failed to recover transaction.");
+      setNote("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to flag transaction.");
     } finally {
       setIsProcessing(false);
     }
@@ -142,7 +146,7 @@ export default function LedgerPage() {
               setSelectedLedger(row.original);
               setIsRecoveryOpen(true);
             }}>
-              <AlertTriangle className="h-4 w-4 mr-2 text-orange-500" /> Recover
+              <AlertTriangle className="h-4 w-4 mr-2 text-orange-500" /> Flag
             </Button>
           )}
         </div>
@@ -164,6 +168,13 @@ export default function LedgerPage() {
           <h1 className="text-3xl font-bold tracking-tight">Financial & Recovery Ledger</h1>
           <p className="text-muted-foreground">Comprehensive platform transactions and failure recovery tools.</p>
         </div>
+        <Button variant="outline" disabled={!filteredLedgers.length} onClick={() => downloadCsv(
+          `ledger-${new Date().toISOString().slice(0, 10)}.csv`,
+          ["Timestamp", "Transaction ID", "Type", "Amount", "User ID", "Status", "Description"],
+          filteredLedgers.map(l => [toDate(l.createdAt), l.transactionId, l.type, l.amount, l.userId, l.status, l.description])
+        )}>
+          <Download className="h-4 w-4 mr-2" /> Export CSV
+        </Button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
@@ -241,16 +252,16 @@ export default function LedgerPage() {
       <Dialog open={isRecoveryOpen} onOpenChange={setIsRecoveryOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Manual Transaction Recovery</DialogTitle>
+            <DialogTitle>Flag for Reconciliation</DialogTitle>
             <DialogDescription>
-              Force-sync this transaction to resolve failed webhooks or unlock lingering trainer slots.
+              Record a note on this transaction so it can be reconciled. This does not change its status or move money.
             </DialogDescription>
           </DialogHeader>
           {selectedLedger && (
             <div className="py-4 space-y-4">
               <div className="bg-orange-50 dark:bg-orange-950/20 text-orange-800 dark:text-orange-200 p-4 rounded-md text-sm flex items-start gap-3">
                 <AlertTriangle className="h-5 w-5 shrink-0" />
-                <p>This action overrides the system status. Only proceed if you have verified the transaction status externally (e.g. in Razorpay Dashboard).</p>
+                <p>Verify the transaction in the Razorpay dashboard first. Actual recovery (webhook replay, slot release) is done in the booking backend.</p>
               </div>
               <div className="space-y-2 text-sm bg-muted/50 p-4 rounded-md">
                 <div className="flex justify-between">
@@ -268,11 +279,12 @@ export default function LedgerPage() {
               </div>
             </div>
           )}
+          <Textarea placeholder="What needs reconciling? (required)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsRecoveryOpen(false)}>Cancel</Button>
-            <Button onClick={handleRecovery} disabled={isProcessing}>
+            <Button onClick={handleRecovery} disabled={isProcessing || !note.trim()}>
               <ArrowRightLeft className="h-4 w-4 mr-2" />
-              {isProcessing ? 'Recovering...' : 'Force Recovery Sync'}
+              {isProcessing ? 'Saving...' : 'Flag Transaction'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,6 +16,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
+import { MobileNav } from "./mobile-nav";
 
 export function Header() {
   const { theme, setTheme } = useTheme();
@@ -29,7 +30,8 @@ export function Header() {
 
   return (
     <header className="h-16 border-b bg-background flex items-center justify-between px-6 flex-shrink-0">
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
+        <MobileNav />
         {/* Breadcrumbs could go here */}
         <h2 className="text-lg font-semibold hidden md:block">Admin Panel</h2>
       </div>

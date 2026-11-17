@@ -7,7 +7,7 @@
 // `match /databases/{database}/documents { ... }`, and test in the emulator.
 //
 // Admin roster: documents in `admins` keyed by the admin's Auth UID with
-// { role: 'admin' | 'superadmin', isActive: true }. The panel's login also
+// { role: 'superadmin' | 'admin' | 'ops' | 'finance' | 'support', isActive: true }. The panel's login also
 // accepts roster docs with auto IDs (matched by email), but rules can't query by
 // email, so MIGRATE any auto-ID admin docs to uid-keyed docs before enforcing.
 
@@ -20,7 +20,7 @@ function adminDoc() {
 function isAdmin() {
   return isSignedIn()
     && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-    && adminDoc().role in ['admin', 'superadmin']
+    && adminDoc().role in ['superadmin', 'admin', 'ops', 'finance', 'support']
     && adminDoc().get('isActive', true) != false;
 }
 
@@ -40,11 +40,13 @@ match /manual_refund_queue/{id}{ allow read: if isAdmin(); allow write: if false
 match /adminNotifications/{id} { allow read: if isAdmin(); allow write: if false; }
 match /slot_locks/{id}         { allow read: if isAdmin(); allow write: if false; }
 
-// Money records: admins read; mutations should go through Cloud Functions.
-// (The panel currently updates these from the client — move to functions in Phase 2.)
-match /ledger/{id}             { allow read: if isAdmin(); allow write: if isAdmin(); }
-match /payment_sessions/{id}   { allow read: if isAdmin(); allow write: if isAdmin(); }
-match /support_tickets/{id}    { allow read: if isAdmin(); allow write: if isAdmin(); }
+// Money + support records: admins read; ALL mutations go through Cloud Functions
+// (adminRefundPayment, adminFlagLedgerEntry, adminUpdateSupportTicket), which enforce roles.
+// If the mobile apps write support_tickets (users creating tickets), keep that rule and
+// only remove the admin client write.
+match /ledger/{id}             { allow read: if isAdmin(); allow write: if false; }
+match /payment_sessions/{id}   { allow read: if isAdmin(); allow write: if false; }
+match /support_tickets/{id}    { allow read: if isAdmin(); allow write: if false; }
 
 // Content managed from the panel; public read where the apps/website need it.
 match /landing_page/{id}       { allow read: if true; allow write: if isAdmin(); }

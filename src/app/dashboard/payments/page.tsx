@@ -2,7 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { useFirestoreQuery } from "@/lib/hooks/useFirestoreQuery";
-import { useFirestoreMutation } from "@/lib/hooks/useFirestoreMutation";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "@/lib/firebase/config";
+import { useQueryClient } from "@tanstack/react-query";
+import { Textarea } from "@/components/ui/textarea";
 import {
   flexRender,
   getCoreRowModel,
@@ -32,7 +35,8 @@ import {
 } from "@/components/ui/dialog";
 import { PaymentSession } from "@/types";
 import { toast } from "sonner";
-import { Search, RotateCcw, CreditCard } from "lucide-react";
+import { downloadCsv, toDate } from "@/lib/csv";
+import { Search, RotateCcw, CreditCard, Download } from "lucide-react";
 import Link from "next/link";
 
 export default function PaymentsPage() {
@@ -42,7 +46,8 @@ export default function PaymentsPage() {
     []
   );
   
-  const { update } = useFirestoreMutation('payment_sessions');
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<PaymentSession | null>(null);
@@ -63,20 +68,18 @@ export default function PaymentsPage() {
 
   const handleRefund = async () => {
     if (!selectedPayment) return;
+    if (!reason.trim()) { toast.error("A reason is required."); return; }
     setIsProcessing(true);
     try {
-      // In a real scenario, you'd trigger a Cloud Function here to hit the Razorpay Refund API
-      // Here we just update the Firestore status for the mockup
-      await update.mutateAsync({
-        id: selectedPayment.id,
-        status: 'Refunded',
-        updatedAt: new Date().toISOString()
-      });
-      toast.success(`Refund initiated for Payment ID: ${selectedPayment.razorpayPaymentId}`);
+      const refund = httpsCallable(functions, "adminRefundPayment");
+      await refund({ paymentSessionId: selectedPayment.id, reason: reason.trim() });
+      toast.success("Refund queued. The status updates once the refund worker processes it.");
+      queryClient.invalidateQueries({ queryKey: ["payment_sessions"] });
       setIsRefundOpen(false);
       setSelectedPayment(null);
-    } catch (error) {
-      toast.error("Failed to process refund.");
+      setReason("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to queue refund.");
     } finally {
       setIsProcessing(false);
     }
@@ -152,6 +155,13 @@ export default function PaymentsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Payment Sessions</h1>
           <p className="text-muted-foreground">Track Razorpay transactions and issue manual refunds.</p>
         </div>
+        <Button variant="outline" disabled={!filteredPayments.length} onClick={() => downloadCsv(
+          `payments-${new Date().toISOString().slice(0, 10)}.csv`,
+          ["Date", "Payment ID", "Order ID", "User ID", "Amount", "Status"],
+          filteredPayments.map(p => [toDate(p.createdAt), p.razorpayPaymentId, p.razorpayOrderId, p.userId, p.amount, p.status])
+        )}>
+          <Download className="h-4 w-4 mr-2" /> Export CSV
+        </Button>
         <Link href="/dashboard/ledger" className={buttonVariants()}>
           <CreditCard className="h-4 w-4 mr-2" /> View Full Ledger
         </Link>
@@ -218,7 +228,7 @@ export default function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>Issue Refund</DialogTitle>
             <DialogDescription>
-              Are you sure you want to refund this transaction? This action will trigger a refund via Razorpay.
+              This queues a refund for the booking that owns this payment. The refund worker processes it via Razorpay; it is logged in the audit trail.
             </DialogDescription>
           </DialogHeader>
           {selectedPayment && (
@@ -233,10 +243,11 @@ export default function PaymentsPage() {
               </div>
             </div>
           )}
+          <Textarea placeholder="Reason for refund (required)" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={5000} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsRefundOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleRefund} disabled={isProcessing}>
-              {isProcessing ? 'Processing...' : 'Confirm Refund'}
+            <Button variant="destructive" onClick={handleRefund} disabled={isProcessing || !reason.trim()}>
+              {isProcessing ? 'Queuing...' : 'Queue Refund'}
             </Button>
           </DialogFooter>
         </DialogContent>

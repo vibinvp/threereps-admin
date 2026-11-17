@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { canAccess } from "@/lib/permissions";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const pathname = usePathname();
+  const { isAuthenticated, isLoading, adminData } = useAuthStore();
+  const allowed = !adminData || canAccess(adminData.role, pathname);
 
   useEffect(() => {
     // In a real scenario, this is where Firebase auth state listener updates the store
@@ -14,7 +17,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!isLoading && !isAuthenticated) {
       router.replace("/login");
     }
-  }, [isAuthenticated, isLoading, router]);
+    if (!isLoading && isAuthenticated && !allowed) {
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, allowed, router]);
 
   if (isLoading) {
     return (
@@ -25,7 +31,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // If not authenticated, we return null while redirect happens
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !allowed) {
     return null;
   }
 

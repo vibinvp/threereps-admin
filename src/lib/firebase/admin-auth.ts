@@ -1,4 +1,5 @@
 import { getAdminAuth, getAdminDb } from '@/lib/firebase/admin';
+import { isAdminRole } from '@/lib/permissions';
 
 export const SESSION_COOKIE_NAME = '__session';
 export const SESSION_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -24,7 +25,7 @@ export async function getAdminRecord(uid: string, email?: string) {
   if (!snap.exists) return null;
   const data = snap.data()!;
   if (data.isActive === false) return null;
-  if (data.role !== 'admin' && data.role !== 'superadmin') return null;
+  if (!isAdminRole(data.role)) return null;
   return { id: snap.id, ...data } as Record<string, unknown>;
 }
 

@@ -2,7 +2,9 @@
 
 import { useState, useMemo } from "react";
 import { useFirestoreQuery } from "@/lib/hooks/useFirestoreQuery";
-import { useFirestoreMutation } from "@/lib/hooks/useFirestoreMutation";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "@/lib/firebase/config";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   flexRender,
   getCoreRowModel,
@@ -49,7 +51,7 @@ interface SupportTicket {
 
 export default function SupportPage() {
   const { data: tickets, isLoading } = useFirestoreQuery<SupportTicket>(['support_tickets'], 'support_tickets');
-  const { update } = useFirestoreMutation('support_tickets');
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("All");
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
@@ -76,15 +78,13 @@ export default function SupportPage() {
     if (!selectedTicket) return;
     setIsSaving(true);
     try {
-      await update.mutateAsync({
-        id: selectedTicket.id,
-        status: ticketStatus,
-        adminNotes: adminNotes,
-      });
+      const updateTicket = httpsCallable(functions, "adminUpdateSupportTicket");
+      await updateTicket({ ticketId: selectedTicket.id, status: ticketStatus, adminNotes });
+      queryClient.invalidateQueries({ queryKey: ["support_tickets"] });
       toast.success("Ticket updated successfully");
       setIsSheetOpen(false);
-    } catch (error) {
-      toast.error("Failed to update ticket");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update ticket");
     } finally {
       setIsSaving(false);
     }

@@ -9,6 +9,9 @@ const { slotLockKey, isSameSlotHour } = require("./slotKey");
 
 admin.initializeApp();
 
+// Keep in sync with src/lib/permissions.ts
+const ADMIN_ROLES = ["superadmin", "admin", "ops", "finance", "support"];
+
 /**
  * Validates that the caller is an active admin.
  */
@@ -43,11 +46,23 @@ async function validateAdmin(authData) {
     throw new HttpsError("permission-denied", "Admin account is deactivated.");
   }
 
+  const role = adminData.role || "admin";
+  if (!ADMIN_ROLES.includes(role)) {
+    throw new HttpsError("permission-denied", "Admin role not recognised.");
+  }
+
   return {
     uid: authData.uid, // authoritative UID from the request
     email: adminData.email || authData.token.email,
     name: adminData.name || "Unknown Admin",
+    role,
   };
+}
+
+/** Throws unless the admin's role is one of `allowed` (superadmin always passes). */
+function requireRole(adminIdentity, allowed) {
+  if (adminIdentity.role === "superadmin" || allowed.includes(adminIdentity.role)) return;
+  throw new HttpsError("permission-denied", "Your role cannot perform this action.");
 }
 
 /**
@@ -79,6 +94,10 @@ function buildSlotLockId(trainerId, dateStr, formattedTime) {
  */
 const notifications = require("./notifications");
 notifications.setValidator(validateAdmin);
+const finance = require("./finance");
+finance.init({ validateAdmin, requireRole });
+exports.adminUpdateSupportTicket = finance.adminUpdateSupportTicket;
+exports.adminFlagLedgerEntry = finance.adminFlagLedgerEntry;
 exports.adminSendNotification = notifications.adminSendNotification;
 
 exports.adminAddBookingNote = onCall(async (request) => {
@@ -129,11 +148,7 @@ exports.adminAddBookingNote = onCall(async (request) => {
  * Writes to manual_refund_queue using the exact schema expected by the User App's worker.
  * Server resolves authoritative payment parameters from the booking.
  */
-exports.adminRequestRefund = onCall(async (request) => {
-  const adminIdentity = await validateAdmin(request.auth);
-  
-  const { bookingId, reason } = request.data;
-  
+async function queueRefund(adminIdentity, bookingId, reason) {  
   if (!bookingId || typeof bookingId !== "string" || bookingId.trim().length === 0) {
     throw new HttpsError("invalid-argument", "Valid bookingId is required");
   }
@@ -219,6 +234,38 @@ exports.adminRequestRefund = onCall(async (request) => {
   });
 
   return { success: true, status: "pending" };
+}
+
+exports.adminRequestRefund = onCall(async (request) => {
+  const adminIdentity = await validateAdmin(request.auth);
+  requireRole(adminIdentity, ["admin", "ops", "finance"]);
+  const { bookingId, reason } = request.data || {};
+  return queueRefund(adminIdentity, bookingId, reason);
+});
+
+/**
+ * adminRefundPayment
+ * Refund entry point for the Payments page: resolves the booking that owns a
+ * payment session, then queues the refund through the same verified path.
+ * It never edits payment_sessions.status; the refund worker does that.
+ */
+exports.adminRefundPayment = onCall(async (request) => {
+  const adminIdentity = await validateAdmin(request.auth);
+  requireRole(adminIdentity, ["admin", "finance"]);
+  const { paymentSessionId, reason } = request.data || {};
+  if (!paymentSessionId || typeof paymentSessionId !== "string") {
+    throw new HttpsError("invalid-argument", "paymentSessionId is required");
+  }
+  const db = admin.firestore();
+  const psDoc = await db.collection("payment_sessions").doc(paymentSessionId).get();
+  if (!psDoc.exists) throw new HttpsError("not-found", "Payment session not found");
+  const ps = psDoc.data();
+  const paymentId = ps.razorpayPaymentId || ps.paymentId;
+  if (!paymentId) throw new HttpsError("failed-precondition", "Payment has no captured payment id");
+  const bookings = await db.collection("bookings").where("paymentId", "==", paymentId).limit(2).get();
+  if (bookings.empty) throw new HttpsError("not-found", "No booking found for this payment");
+  if (bookings.size > 1) throw new HttpsError("failed-precondition", "Multiple bookings match this payment; refund from the booking page.");
+  return queueRefund(adminIdentity, bookings.docs[0].id, reason);
 });
 
 /**
