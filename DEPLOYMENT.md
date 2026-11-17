@@ -18,6 +18,7 @@ firebase deploy --only functions:admin --project reps-2f5f8
 ```
 - Touches only functions labelled codebase `admin` (the 6 existing `admin*` ones + `adminQueuePaymentRefund`,
   `adminFlagLedgerEntry`, `adminUpdateSupportTicket`). The user-app backend (default codebase) is untouched.
+- Runtime is Node.js 22 (`functions/package.json`); Node 20 was decommissioned 2026-10-30.
 - Do not pass `--force`. If the CLI proposes deleting a function you don't recognise, answer **No**.
 - Name note: the user-app backend already has its own `adminRefundPayment` (us-central1). Ours is
   `adminQueuePaymentRefund` on purpose.
