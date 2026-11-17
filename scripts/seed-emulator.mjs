@@ -33,7 +33,7 @@ for (const [email, role, name] of accounts) {
 }
 await put('support_requests/t1', { userId: 'user_demo_1', subject: 'App crash on booking', description: 'It closes when I tap Pay', status: 'open' });
 await put('ledger/l1', { transactionId: 'txn_demo_0001', type: 'credit', amount: 1500, userId: 'user_demo_1', status: 'failed', description: 'Subscription' });
-await put('payment_sessions/ps1', { razorpayPaymentId: 'pay_demo_1', razorpayOrderId: 'order_demo_1', userId: 'user_demo_1', amount: 1500, status: 'Captured' });
+await put('payment_sessions/order_demo_1', { orderId: 'order_demo_1', paymentId: 'pay_demo_1', userId: 'user_demo_1', amount: 150000, paymentState: 'success' });
 await put('bookings/b1', { paymentId: 'pay_demo_1', orderId: 'order_demo_1', amount: 150000, bookingReference: 'REF-DEMO', paymentSnapshot: { amount: 150000 } });
 await put('audit_logs/a1', { action: 'seed', entity: 'demo', adminName: 'Seeder', reason: 'sample row' });
 console.log('Seeded. Logins: superadmin@local.test / finance@local.test / support@local.test (password in this script).');

@@ -261,8 +261,14 @@ exports.adminQueuePaymentRefund = onCall(async (request) => {
   if (!psDoc.exists) throw new HttpsError("not-found", "Payment session not found");
   const ps = psDoc.data();
   const paymentId = ps.razorpayPaymentId || ps.paymentId;
-  if (!paymentId) throw new HttpsError("failed-precondition", "Payment has no captured payment id");
-  const bookings = await db.collection("bookings").where("paymentId", "==", paymentId).limit(2).get();
+  // Real sessions are keyed by Razorpay order id; match the booking by payment id, else by order id.
+  let bookings = paymentId
+    ? await db.collection("bookings").where("paymentId", "==", paymentId).limit(2).get()
+    : { empty: true, size: 0, docs: [] };
+  if (bookings.empty) {
+    bookings = await db.collection("bookings").where("orderId", "==", ps.orderId || paymentSessionId).limit(2).get();
+  }
+  if (!paymentId && bookings.empty) throw new HttpsError("failed-precondition", "Payment has no payment id and no booking by order id");
   if (bookings.empty) throw new HttpsError("not-found", "No booking found for this payment");
   if (bookings.size > 1) throw new HttpsError("failed-precondition", "Multiple bookings match this payment; refund from the booking page.");
   return queueRefund(adminIdentity, bookings.docs[0].id, reason);

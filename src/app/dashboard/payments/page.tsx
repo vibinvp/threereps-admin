@@ -36,6 +36,7 @@ import {
 import { PaymentSession } from "@/types";
 import { toast } from "sonner";
 import { downloadCsv, toDate } from "@/lib/csv";
+import { paymentStateOf, paymentLabel, paymentBadge, formatINR, paiseToRupees } from "@/lib/payments";
 import { Search, RotateCcw, CreditCard, Download } from "lucide-react";
 import Link from "next/link";
 
@@ -59,9 +60,9 @@ export default function PaymentsPage() {
     return payments.filter(payment => {
       const lowerQuery = searchQuery.toLowerCase();
       return (
-        payment.razorpayPaymentId?.toLowerCase().includes(lowerQuery) ||
-        payment.razorpayOrderId?.toLowerCase().includes(lowerQuery) ||
-        payment.userId.toLowerCase().includes(lowerQuery)
+        (payment.razorpayPaymentId ?? payment.paymentId ?? '').toLowerCase().includes(lowerQuery) ||
+        (payment.razorpayOrderId ?? payment.orderId ?? payment.id ?? '').toLowerCase().includes(lowerQuery) ||
+        (payment.userId ?? '').toLowerCase().includes(lowerQuery)
       );
     });
   }, [payments, searchQuery]);
@@ -103,35 +104,31 @@ export default function PaymentsPage() {
     {
       accessorKey: "userId",
       header: "User ID",
-      cell: ({ row }) => <span className="text-xs font-mono">{row.original.userId.slice(0, 8)}</span>
+      cell: ({ row }) => <span className="text-xs font-mono">{String(row.original.userId ?? '').slice(0, 8)}</span>
     },
     {
       accessorKey: "razorpayPaymentId",
       header: "Payment ID",
-      cell: ({ row }) => <span className="text-xs font-mono text-muted-foreground">{row.original.razorpayPaymentId || 'N/A'}</span>
+      cell: ({ row }) => <span className="text-xs font-mono text-muted-foreground">{row.original.razorpayPaymentId ?? (row.original as any).paymentId ?? (row.original as any).orderId ?? row.original.id}</span>
     },
     {
       accessorKey: "amount",
       header: "Amount",
-      cell: ({ row }) => <span className="text-sm font-bold">₹{row.original.amount}</span>
+      cell: ({ row }) => <span className="text-sm font-bold">{formatINR(row.original.amount)}</span>
     },
     {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => {
-        const s = row.original.status;
-        let v = "default";
-        if (s === "Failed") v = "destructive";
-        if (s === "Refunded") v = "secondary";
-        if (s === "Pending") v = "outline";
-        return <Badge variant={v as any}>{s}</Badge>;
+        const s = paymentStateOf(row.original as any);
+        return <Badge variant={paymentBadge(s)}>{paymentLabel(s)}</Badge>;
       }
     },
     {
       id: "actions",
       cell: ({ row }) => (
         <div className="flex gap-2 justify-end">
-          {row.original.status === 'Captured' && (
+          {paymentStateOf(row.original as any) === 'success' && (
             <Button variant="outline" size="sm" onClick={() => openRefundDialog(row.original)}>
               <RotateCcw className="h-4 w-4 mr-2" /> Refund
             </Button>
@@ -157,8 +154,8 @@ export default function PaymentsPage() {
         </div>
         <Button variant="outline" disabled={!filteredPayments.length} onClick={() => downloadCsv(
           `payments-${new Date().toISOString().slice(0, 10)}.csv`,
-          ["Date", "Payment ID", "Order ID", "User ID", "Amount", "Status"],
-          filteredPayments.map(p => [toDate(p.createdAt), p.razorpayPaymentId, p.razorpayOrderId, p.userId, p.amount, p.status])
+          ["Date", "Payment ID", "Order ID", "User ID", "Amount (INR)", "State"],
+          filteredPayments.map(p => [toDate(p.createdAt), p.razorpayPaymentId ?? (p as any).paymentId, p.razorpayOrderId ?? (p as any).orderId ?? p.id, p.userId, paiseToRupees(p.amount), paymentLabel(paymentStateOf(p as any))])
         )}>
           <Download className="h-4 w-4 mr-2" /> Export CSV
         </Button>
@@ -239,7 +236,7 @@ export default function PaymentsPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Amount:</span>
-                <span className="font-bold">₹{selectedPayment.amount}</span>
+                <span className="font-bold">{formatINR(selectedPayment.amount)}</span>
               </div>
             </div>
           )}

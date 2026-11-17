@@ -209,9 +209,14 @@ export const paymentSessionSchema = z.object({
   id: z.string().optional(),
   razorpayPaymentId: z.string().optional(),
   razorpayOrderId: z.string().optional(),
-  userId: z.string(),
-  amount: z.number(),
-  status: z.enum(['Captured', 'Failed', 'Refunded', 'Pending']),
+  // Real documents (user-app backend): keyed by Razorpay order id, state in `paymentState`,
+  // `amount` in paise. `status` is a legacy field that real documents do not have.
+  paymentId: z.string().optional(),
+  orderId: z.string().optional(),
+  paymentState: z.string().optional(),
+  userId: z.string().optional(),
+  amount: z.number().optional(),
+  status: z.enum(['Captured', 'Failed', 'Refunded', 'Pending']).optional(),
   createdAt: z.any().optional(),
   updatedAt: z.any().optional(),
 });

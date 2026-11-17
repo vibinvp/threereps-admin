@@ -54,6 +54,9 @@ before(async () => {
   await put('support_requests/t1', { status: 'open', userId: 'u1' });
   await put('ledger/l1', { amount: 100, status: 'failed' });
   await put('payment_sessions/ps1', { razorpayPaymentId: 'pay_1', status: 'Captured' });
+  // Real-shaped session (keyed by order id, no razorpayPaymentId, paise amount, paymentState)
+  await put('payment_sessions/order_real_1', { orderId: 'order_real_1', paymentState: 'success', amount: 150000, userId: 'u1' });
+  await put('bookings/b_real', { orderId: 'order_real_1', paymentId: 'pay_real_1', amount: 150000, bookingReference: 'REF2', paymentSnapshot: { amount: 150000 } });
   await put('bookings/b1', { paymentId: 'pay_1', orderId: 'order_1', amount: 50000, bookingReference: 'REF1', paymentSnapshot: { amount: 50000 } });
 });
 
@@ -102,4 +105,12 @@ test('refund queues once, never edits payment status, and blocks duplicates', as
   assert.equal(dup.status, 409);
   const noReason = await call('adminQueuePaymentRefund', sa.token, { paymentSessionId: 'ps1', reason: '' });
   assert.equal(noReason.status, 400);
+});
+
+test('refund works for a real-shaped session (order-id keyed, no razorpayPaymentId)', async () => {
+  const r = await call('adminQueuePaymentRefund', fin.token, { paymentSessionId: 'order_real_1', reason: 'duplicate charge' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const q = await get('manual_refund_queue/pay_real_1');
+  assert.equal(q.fields.bookingId.stringValue, 'b_real');
+  assert.equal((await get('payment_sessions/order_real_1')).fields.paymentState.stringValue, 'success');
 });

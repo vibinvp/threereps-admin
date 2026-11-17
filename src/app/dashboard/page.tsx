@@ -6,7 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Users, UserCog, CalendarCheck, DollarSign, Activity, ClipboardList, LifeBuoy } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useFirestoreQuery, useFirestoreCount, useFirestoreSum } from "@/lib/hooks/useFirestoreQuery";
+import { useFirestoreQuery, useFirestoreCount } from "@/lib/hooks/useFirestoreQuery";
+import { paiseToRupees } from "@/lib/payments";
 import { where, orderBy, limit } from "firebase/firestore";
 
 const AreaChart = dynamic(() => import("recharts").then(mod => mod.AreaChart), { ssr: false });
@@ -36,9 +37,10 @@ export default function DashboardOverviewPage() {
   );
 
   const { data: paymentsData, isLoading: paymentsLoading } = useFirestoreQuery<any>(
-    ['payment_sessions', 'captured'],
+    ['payment_sessions', 'success'],
     'payment_sessions',
-    [where('status', '==', 'Captured')]
+    // Real sessions use paymentState (not status); single-field filter needs no composite index.
+    [where('paymentState', '==', 'success'), limit(1000)]
   );
 
   // KPI counts — server-side aggregates, so these don't scale with collection
@@ -61,31 +63,26 @@ export default function DashboardOverviewPage() {
     'bookings',
     [where('bookingStatus', '==', 'confirmed')]
   );
-  const { data: totalRevenueAgg, isLoading: revenueLoading } = useFirestoreSum(
-    ['payment_sessions', 'sum', 'captured'],
-    'payment_sessions',
-    'amount',
-    [where('status', '==', 'Captured')]
-  );
   const { data: pendingApplicationsCountAgg, isLoading: pendingAppsLoading } = useFirestoreCount(
     ['trainers', 'count', 'pending'],
     'trainers',
     [where('status', 'in', ['pending', 'new'])]
   );
   const { data: openTicketsCountAgg, isLoading: openTicketsLoading } = useFirestoreCount(
-    ['support_tickets', 'count', 'open'],
-    'support_tickets',
-    [where('status', 'in', ['Pending', 'In Progress'])]
+    ['support_requests', 'count', 'open'],
+    'support_requests',
+    [where('status', 'in', ['open', 'in_progress'])]
   );
 
   const isLoading = usersLoading || bookingsLoading || paymentsLoading
     || totalUsersLoading || deletedUsersLoading || trainersCountLoading
-    || activeBookingsLoading || revenueLoading || pendingAppsLoading || openTicketsLoading;
+    || activeBookingsLoading || pendingAppsLoading || openTicketsLoading;
 
   const totalUsers = Math.max((totalUsersCount || 0) - (deletedUsersCount || 0), 0);
   const totalTrainers = totalTrainersCount || 0;
   const activeBookingsCount = activeBookingsCountAgg || 0;
-  const totalRevenue = totalRevenueAgg || 0;
+  // amount is stored in paise; sum of paid sessions (up to 1000 most recent-by-id) converted to rupees
+  const totalRevenue = paiseToRupees((paymentsData ?? []).reduce((sum: number, p: any) => sum + (typeof p.amount === 'number' ? p.amount : 0), 0));
   const pendingApplicationsCount = pendingApplicationsCountAgg || 0;
   const openTicketsCount = openTicketsCountAgg || 0;
 
@@ -103,7 +100,7 @@ export default function DashboardOverviewPage() {
         if (date && !isNaN(date.getTime())) {
           const month = date.toLocaleString('default', { month: 'short' });
           if (monthlyData[month] !== undefined) {
-            monthlyData[month] += (payment.amount || 0);
+            monthlyData[month] += paiseToRupees(payment.amount);
           }
         }
       }
