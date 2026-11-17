@@ -56,6 +56,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { functions } from "@/lib/firebase/config";
 import { httpsCallable } from "firebase/functions";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { canAccess } from "@/lib/permissions";
 import { bookingTrainerName, bookingTierName, bookingPlanLabel, bookingTypeLabel, bookingSlotTime } from "@/lib/bookings";
 import { toast } from "sonner";
 
@@ -76,6 +78,8 @@ type BookingsPageResult = {
 };
 
 export default function BookingsPage() {
+  const role = useAuthStore((st) => st.adminData?.role);
+  const canCreate = canAccess(role, "/dashboard/bookings/new");
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("All");
@@ -280,6 +284,11 @@ export default function BookingsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Booking Engine</h1>
           <p className="text-muted-foreground">Monitor bookings and progress. Open a booking to add notes, change the trainer, cancel or request a refund.</p>
         </div>
+        {canCreate && (
+          <Link href="/dashboard/bookings/new" className={buttonVariants()}>
+            <Plus className="h-4 w-4 mr-2" /> New Manual Booking
+          </Link>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => v && handleTabChange(v)} className="w-full">

@@ -13,6 +13,7 @@ const ALL: AdminRole[] = [...ADMIN_ROLES];
 export const ROUTE_ROLES: Record<string, AdminRole[]> = {
   '/dashboard': ALL,
   '/dashboard/bookings': ['admin', 'ops', 'finance', 'support'],
+  '/dashboard/bookings/new': ['admin', 'ops'],
   '/dashboard/attendance': ['admin', 'ops'],
   '/dashboard/trainers': ['admin', 'ops'],
   '/dashboard/trainer-tiers': ['admin'],

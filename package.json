@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:rules": "firebase emulators:exec --only firestore --project demo-threereps \"node --test tests/rules.test.mjs\"",
-    "test:functions": "firebase emulators:exec --only auth,firestore,functions --project demo-threereps \"node --test tests/functions.test.mjs\"",
+    "test:functions": "firebase emulators:exec --only auth,firestore,functions --project demo-threereps \"node --test tests/functions.test.mjs tests/manual-booking.test.mjs\"",
     "test": "npm run test:rules && npm run test:functions",
     "emulators": "firebase emulators:start --only auth,firestore,functions --project demo-threereps",
     "dev:emu": "NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-threereps NEXT_PUBLIC_FIREBASE_API_KEY=fake-api-key FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 next dev -p 3150"

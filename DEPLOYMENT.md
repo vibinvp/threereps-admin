@@ -75,3 +75,17 @@ Indexes: `firestore.indexes.json` may not include the mobile apps' indexes. Do *
   confirm it checks admin auth, or delete it there.
 - Custom domain (`admin.threereps.com`) later: add in Vercel, add DNS record, add to Auth authorized domains.
 - ~95 `any` types still warn in lint; the `/dashboard/trainer-tiers` etc. older pages lack some error states.
+
+## Manual (admin) bookings
+Staff with role `admin`, `ops` or `superadmin` can book for a client who isn't using the app: Bookings > New Manual Booking.
+- Functions: `adminLookupClient`, `adminPreviewManualBooking`, `adminCreateManualBooking` (`functions/manualBooking.js`).
+  They reuse the booking engine's pricing/schedule code (`functions/bookingEngine/pricingResolver.js` is a verbatim copy of
+  `threereps_user/functions/bookingEngine/pricingResolver.js`; re-copy it if the engine's pricing changes).
+- One transaction creates the booking (`bookingSource: "admin_manual"`, `paymentSnapshot.gateway: "offline"`), a permanent lock
+  and a session per date, bumps `counters/bookings`, and writes a `ledger` entry (rupees) and an audit log. Retry-safe via `clientRequestId`.
+- New clients get a Firebase Auth user + `users/{uid}` keyed by phone number, so they can later sign in with the same number
+  (phone OTP) and see the booking. Google-login clients would not be linked automatically.
+- Offline bookings cannot use "Request Refund" (no Razorpay payment); the UI and `adminRequestRefund` say so.
+- Not done: service-area check, merge tool for duplicate client accounts, cancel flow that records an offline refund.
+- Before first production use, create one test manual booking and open it in the user app to confirm the app tolerates
+  `paymentId: null` / `orderId: null` on booking documents.

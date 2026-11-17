@@ -98,6 +98,11 @@ const finance = require("./finance");
 finance.init({ validateAdmin, requireRole });
 exports.adminUpdateSupportTicket = finance.adminUpdateSupportTicket;
 exports.adminFlagLedgerEntry = finance.adminFlagLedgerEntry;
+const manualBooking = require("./manualBooking");
+manualBooking.init({ validateAdmin, requireRole });
+exports.adminLookupClient = manualBooking.adminLookupClient;
+exports.adminPreviewManualBooking = manualBooking.adminPreviewManualBooking;
+exports.adminCreateManualBooking = manualBooking.adminCreateManualBooking;
 exports.adminSendNotification = notifications.adminSendNotification;
 
 exports.adminAddBookingNote = onCall(async (request) => {
@@ -167,6 +172,11 @@ async function queueRefund(adminIdentity, bookingId, reason) {
   }
   
   const bookingData = bookingDoc.data();
+
+  // Manual (admin) bookings are paid offline: there is no Razorpay payment to refund.
+  if (bookingData.paymentSnapshot && bookingData.paymentSnapshot.gateway === "offline") {
+    throw new HttpsError("failed-precondition", "This booking was paid offline (" + (bookingData.paymentSnapshot.method || "manual") + "). Refund the client directly and record it in your books; there is no Razorpay payment to refund.");
+  }
   
   // Resolve authoritative payment info from the booking document
   const paymentId = bookingData.paymentId;

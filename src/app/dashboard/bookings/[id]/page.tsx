@@ -431,6 +431,11 @@ export default async function BookingDetailsPage({
               trainers={activeTrainers}
               disabled={bStatus === "cancelled" || bStatus === "completed"}
             />
+            {booking.paymentSnapshot?.gateway === "offline" ? (
+              <Button variant="outline" disabled title="Paid offline: refund the client directly">
+                Paid offline ({(booking.paymentSnapshot as { method?: string }).method ?? "manual"}) – refund directly
+              </Button>
+            ) : (
             <RefundRequestModal
               data={{
                 bookingId: booking.id,
@@ -442,6 +447,7 @@ export default async function BookingDetailsPage({
                 refundStatus: refundQueueState?.status ?? null
               }}
             />
+            )}
           </div>
         </div>
       </div>
