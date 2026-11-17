@@ -1,0 +1,268 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
+
+    // Returns true if request is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Returns true if request user ID matches document owner ID
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ---- Admin access ---------------------------------------------------
+    // Legacy: accounts with the `admin` custom claim keep FULL access exactly
+    // as before (old Flutter admin, scripts). NEW: staff listed in `admins/{uid}`
+    // get access by role. Roles: superadmin | admin | ops | finance | support.
+    // Keep role names in sync with src/lib/permissions.ts and functions/index.js.
+    function isClaimAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    function rosterRole() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('role', '');
+    }
+
+    function hasRosterRole(roles) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('isActive', true) != false
+        && rosterRole() in roles;
+    }
+
+    // Any staff member (read-level access). Name kept so existing rules still work.
+    function isAdmin() {
+      return isClaimAdmin() || hasRosterRole(['superadmin', 'admin', 'ops', 'finance', 'support']);
+    }
+    function isSuperAdmin()   { return isClaimAdmin() || hasRosterRole(['superadmin']); }
+    function isFullAdmin()    { return isClaimAdmin() || hasRosterRole(['superadmin', 'admin']); }
+    function isOpsAdmin()     { return isClaimAdmin() || hasRosterRole(['superadmin', 'admin', 'ops']); }
+    function isFinanceAdmin() { return isClaimAdmin() || hasRosterRole(['superadmin', 'admin', 'finance']); }
+    function isSupportAdmin() { return isClaimAdmin() || hasRosterRole(['superadmin', 'admin', 'ops', 'support']); }
+
+    // ==========================================
+    // PUBLIC DATA & CATALOG MODULE
+    // Publicly readable so guests & users can browse profiles, pricing & tiers.
+    // Writes are strictly disallowed or restricted to admins.
+    // ==========================================
+
+    // Trainer Public Profiles
+    match /trainers/{trainerId} {
+      allow read: if true; // Publicly readable for guest browsing
+      allow write: if isOpsAdmin();
+
+      // FCM device tokens written by the trainer app. Doc id = the token.
+      match /fcmTokens/{token} {
+        allow read: if isOwner(trainerId) || isAdmin();
+        allow write: if isOwner(trainerId) || isOpsAdmin();
+      }
+    }
+
+    // Trainer Tiers & Pricing Tiers
+    match /trainer_tiers/{tierId} {
+      allow read: if true; // Publicly readable
+      allow write: if isFullAdmin();
+    }
+
+    // Public Banners / Announcements
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isOpsAdmin();
+    }
+
+    // Public Fitness Categories
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isOpsAdmin();
+    }
+
+    // Public Languages
+    match /languages/{languageId} {
+      allow read: if true;
+      allow write: if isOpsAdmin();
+    }
+
+    // Public Legal & App Content (Terms, Privacy, FAQs)
+    match /legal_content/{contentId} {
+      allow read: if true;
+      allow write: if isFullAdmin();
+    }
+
+    // Service Areas (geo-fenced serviceability radius, managed via Admin Panel)
+    // Publicly readable so the app can gate trainer browsing/booking for
+    // guests too; only admins may create/edit/enable/disable/delete.
+    match /service_areas/{serviceAreaId} {
+      allow read: if true;
+      allow write: if isOpsAdmin();
+    }
+
+    // ==========================================
+    // USER MODULE
+    // User profile management & user-owned documents.
+    // ==========================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isOpsAdmin();
+
+      // FCM device tokens. Doc id = the token itself.
+      match /fcmTokens/{token} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId) || isOpsAdmin();
+      }
+    }
+
+    // Support Requests
+    match /support_requests/{requestId} {
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid) || isSupportAdmin();
+      allow update: if isSupportAdmin();
+      allow delete: if isFullAdmin();
+    }
+
+    // ==========================================
+    // BOOKING & SESSION MODULE
+    // Protected collections. Clients can read their own bookings/sessions.
+    // Direct client writes are blocked (managed via Cloud Functions / Admin SDK).
+    // ==========================================
+
+    // User Bookings
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || resource.data.trainerId == request.auth.uid) || isAdmin();
+      allow write: if false; // Managed strictly via Cloud Functions using Admin SDK
+
+      // Admin notes (written by the adminAddBookingNote function)
+      match /notes/{noteId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    // Scheduled Sessions & Slot Locks
+    match /sessions/{sessionId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || resource.data.trainerId == request.auth.uid) || isAdmin();
+      allow write: if false; // Managed strictly via Cloud Functions using Admin SDK
+    }
+
+    match /slot_locks/{lockId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || resource.data.trainerId == request.auth.uid) || isAdmin();
+      allow write: if false; // Managed strictly via Cloud Functions using Admin SDK
+    }
+
+    // ==========================================
+    // TRAINER PRIVATE & MANAGEMENT MODULE
+    // Private trainer data, internal documents, earnings, notes.
+    // ==========================================
+
+    match /trainer_private/{trainerId} {
+      allow read, write: if isOwner(trainerId) || isOpsAdmin();
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || resource.data.trainerId == request.auth.uid) || isAdmin();
+      allow write: if false; // Managed via Backend/Functions
+    }
+
+    // ==========================================
+    // PAYMENT & FINANCIAL MODULE
+    // Payment records, payment sessions, and sensitive financial logs.
+    // Direct client access is strictly controlled or blocked.
+    // ==========================================
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid) || isAdmin();
+      allow write: if false; // Managed strictly via Cloud Functions
+    }
+
+    match /payment_sessions/{sessionId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid) || isAdmin();
+      allow write: if false; // Managed strictly via Cloud Functions
+    }
+
+    // ==========================================
+    // SYSTEM, NOTIFICATIONS & ADMIN MODULE
+    // User notifications, system analytics, and administrative collections.
+    // ==========================================
+
+    // Admin-sent custom push history. Written only by the adminSendNotification function.
+    match /adminNotifications/{id} {
+      allow read: if isOpsAdmin();
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update, delete: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isOpsAdmin();
+    }
+
+    match /analytics/{analyticsId} {
+      allow read: if isAdmin();
+      allow write: if isFullAdmin();
+    }
+
+    match /app_config/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isFullAdmin();
+    }
+
+    match /admin/{document=**} {
+      allow read, write: if isFullAdmin();
+    }
+
+    // Admin roster. A person may read their own entry (by uid, or by email for
+    // legacy auto-ID docs); only superadmins (or legacy claim holders) may write.
+    match /admins/{adminId} {
+      allow read: if isAuthenticated() && (request.auth.uid == adminId
+                      || resource.data.email == request.auth.token.email)
+                    || isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // ==========================================
+    // ADMIN PANEL COLLECTIONS (new)
+    // Money / audit records are written only by Cloud Functions (Admin SDK).
+    // ==========================================
+
+    match /cms/{id} {
+      allow read: if true;
+      allow write: if isFullAdmin();
+    }
+
+    match /landing_page/{id} {
+      allow read: if true;
+      allow write: if isFullAdmin();
+    }
+
+    match /session_patterns/{id} {
+      allow read: if true;
+      allow write: if isFullAdmin();
+    }
+
+    match /ledger/{id} {
+      allow read: if isFinanceAdmin();
+      allow write: if false;
+    }
+
+    // Shown on booking detail pages, so any staff member can read.
+    match /audit_logs/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /manual_refund_queue/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /app_config_audit/{id} {
+      allow read: if isFullAdmin();
+      allow write: if false;
+    }
+  }
+}

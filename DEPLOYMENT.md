@@ -23,13 +23,27 @@ firebase deploy --only functions:admin --project reps-2f5f8
 - Name note: the user-app backend already has its own `adminRefundPayment` (us-central1). Ours is
   `adminQueuePaymentRefund` on purpose.
 
-## 2. Firestore / Storage rules (MERGE, don't replace)
-The live ruleset also serves the mobile apps. Do not deploy `firebase-rules/*` as-is.
-1. Firebase console > Firestore > Rules: copy the live rules.
-2. Merge the helpers/blocks from `firebase-rules/admin-panel.firestore.rules` (see its header).
-3. Add `|| isAdmin()` to the shared collections it lists. Check the mobile apps' writes to `support_tickets`
-   before locking client writes.
-4. Test with the Rules Playground, then Publish. Repeat for Storage with `admin-panel.storage.rules`.
+## 2. Firestore rules (merged file, tested)
+Live rules were pulled from `reps-2f5f8` on 2026-11-17 and equal `threereps_user/firestore.rules`
+(`firebase-rules/firestore.live-baseline.rules`). The merged file is `firebase-rules/firestore.merged.rules`:
+- Keeps every existing mobile-app rule and the legacy `admin` custom-claim access unchanged.
+- Adds roster-based roles (`admins/{uid}`: superadmin | admin | ops | finance | support).
+- Adds rules for panel collections that were missing and therefore denied: `cms`, `landing_page`,
+  `session_patterns`, `ledger`, `audit_logs`, `manual_refund_queue`, `app_config_audit`, `bookings/{id}/notes`.
+- `npm run test:rules` (14 tests). Run against the live baseline, the 8 app/claim tests pass and the 6 role tests fail,
+  proving the merge changes only what it should.
+
+To publish: Firebase console > Firestore > Rules, paste `firestore.merged.rules`, review the diff, Publish.
+(Or `firebase deploy --only firestore:rules` after adding a `firestore.rules` entry to `firebase.json`.)
+Rollback: Rules > History > restore the previous release.
+
+Note: staff who log in WITHOUT the `admin` claim get access purely from their `admins/{uid}` roster doc.
+Auto-ID roster docs only work for the login fallback; give them the claim or recreate under their Auth UID.
+
+### Storage (optional, higher risk)
+Live storage rules let any signed-in user read/write every file. `firebase-rules/storage.proposed.rules`
+is a tightened draft but is NOT safe to publish until all app upload paths are listed (see its header).
+
 Indexes: `firestore.indexes.json` may not include the mobile apps' indexes. Do **not** run
 `firebase deploy --only firestore:indexes` blindly (it offers to delete indexes missing from the file).
 
@@ -45,7 +59,7 @@ Indexes: `firestore.indexes.json` may not include the mobile apps' indexes. Do *
 ## 4. Smoke test on the deployed URL
 - `/dashboard` while logged out redirects to `/login`.
 - Log in as superadmin; the sidebar shows all sections. Log in as a finance/support user; only their sections.
-- Support: update a ticket; check `audit_logs` has an entry.
+- Support: open a request submitted from the user app (`support_requests`), change its status; check `audit_logs`.
 - Payments: queue a refund on a TEST booking only; confirm `manual_refund_queue/{paymentId}` is `pending`
   and that `processRefundQueue` (user-app backend) picks it up.
 - Log out; `/dashboard` redirects to `/login` again.

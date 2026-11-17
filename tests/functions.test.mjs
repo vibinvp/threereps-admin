@@ -51,35 +51,35 @@ before(async () => {
   await put(`admins/${fin.uid}`, { email: 'fin@t.com', role: 'finance', isActive: true, name: 'Fin' });
   await put(`admins/${sup.uid}`, { email: 'sup@t.com', role: 'support', isActive: true, name: 'Sup' });
   await put(`admins/${off.uid}`, { email: 'off@t.com', role: 'admin', isActive: false, name: 'Off' });
-  await put('support_tickets/t1', { status: 'Pending' });
+  await put('support_requests/t1', { status: 'open', userId: 'u1' });
   await put('ledger/l1', { amount: 100, status: 'failed' });
   await put('payment_sessions/ps1', { razorpayPaymentId: 'pay_1', status: 'Captured' });
   await put('bookings/b1', { paymentId: 'pay_1', orderId: 'order_1', amount: 50000, bookingReference: 'REF1', paymentSnapshot: { amount: 50000 } });
 });
 
 test('rejects unauthenticated callers', async () => {
-  const r = await call('adminUpdateSupportTicket', null, { ticketId: 't1', status: 'Resolved' });
+  const r = await call('adminUpdateSupportTicket', null, { ticketId: 't1', status: 'resolved' });
   assert.equal(r.status, 401);
 });
 test('rejects signed-in non-admins and deactivated admins', async () => {
-  assert.equal((await call('adminUpdateSupportTicket', nobody.token, { ticketId: 't1', status: 'Resolved' })).status, 403);
-  assert.equal((await call('adminUpdateSupportTicket', off.token, { ticketId: 't1', status: 'Resolved' })).status, 403);
+  assert.equal((await call('adminUpdateSupportTicket', nobody.token, { ticketId: 't1', status: 'resolved' })).status, 403);
+  assert.equal((await call('adminUpdateSupportTicket', off.token, { ticketId: 't1', status: 'resolved' })).status, 403);
 });
 test('support role can update a ticket, and it is audit-logged', async () => {
-  const r = await call('adminUpdateSupportTicket', sup.token, { ticketId: 't1', status: 'Resolved', adminNotes: 'fixed' });
+  const r = await call('adminUpdateSupportTicket', sup.token, { ticketId: 't1', status: 'resolved', adminNotes: 'fixed' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal((await get('support_tickets/t1')).fields.status.stringValue, 'Resolved');
+  assert.equal((await get('support_requests/t1')).fields.status.stringValue, 'resolved');
   const logs = await list('audit_logs');
   assert.ok(logs.some((d) => d.fields.action?.stringValue === 'support_ticket_updated' && d.fields.adminName?.stringValue === 'Sup'));
 });
 test('ticket input validation', async () => {
   const bad = await call('adminUpdateSupportTicket', sup.token, { ticketId: 't1', status: 'Hacked' });
   assert.equal(bad.status, 400);
-  const missing = await call('adminUpdateSupportTicket', sup.token, { ticketId: 'nope', status: 'Resolved' });
+  const missing = await call('adminUpdateSupportTicket', sup.token, { ticketId: 'nope', status: 'resolved' });
   assert.equal(missing.status, 404);
 });
 test('finance cannot edit tickets; support cannot flag ledger or refund', async () => {
-  assert.equal((await call('adminUpdateSupportTicket', fin.token, { ticketId: 't1', status: 'Pending' })).status, 403);
+  assert.equal((await call('adminUpdateSupportTicket', fin.token, { ticketId: 't1', status: 'open' })).status, 403);
   assert.equal((await call('adminFlagLedgerEntry', sup.token, { ledgerId: 'l1', note: 'x' })).status, 403);
   assert.equal((await call('adminQueuePaymentRefund', sup.token, { paymentSessionId: 'ps1', reason: 'x' })).status, 403);
 });

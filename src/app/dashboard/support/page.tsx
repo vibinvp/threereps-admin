@@ -38,19 +38,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Eye } from "lucide-react";
 
+// Matches what the user app writes to `support_requests` (status starts as 'open').
+type TicketStatus = 'open' | 'in_progress' | 'resolved';
+const STATUS_LABEL: Record<TicketStatus, string> = { open: 'Open', in_progress: 'In Progress', resolved: 'Resolved' };
+const statusLabel = (s: string) => STATUS_LABEL[s as TicketStatus] ?? s;
+const statusVariant = (s: string) => (s === 'resolved' ? 'default' : s === 'in_progress' ? 'secondary' : 'outline') as 'default' | 'secondary' | 'outline';
+
 interface SupportTicket {
   id: string;
-  userEmail: string;
+  userId: string;
   subject: string;
   description: string;
-  status: 'Pending' | 'In Progress' | 'Resolved';
-  priority: 'Low' | 'Medium' | 'High';
+  status: TicketStatus;
   adminNotes?: string;
   createdAt?: any;
 }
 
 export default function SupportPage() {
-  const { data: tickets, isLoading } = useFirestoreQuery<SupportTicket>(['support_tickets'], 'support_tickets');
+  const { data: tickets, isLoading } = useFirestoreQuery<SupportTicket>(['support_requests'], 'support_requests');
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("All");
@@ -58,7 +63,7 @@ export default function SupportPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   const [adminNotes, setAdminNotes] = useState("");
-  const [ticketStatus, setTicketStatus] = useState<'Pending' | 'In Progress' | 'Resolved'>('Pending');
+  const [ticketStatus, setTicketStatus] = useState<TicketStatus>('open');
   const [isSaving, setIsSaving] = useState(false);
 
   const filteredTickets = useMemo(() => {
@@ -80,7 +85,7 @@ export default function SupportPage() {
     try {
       const updateTicket = httpsCallable(functions, "adminUpdateSupportTicket");
       await updateTicket({ ticketId: selectedTicket.id, status: ticketStatus, adminNotes });
-      queryClient.invalidateQueries({ queryKey: ["support_tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["support_requests"] });
       toast.success("Ticket updated successfully");
       setIsSheetOpen(false);
     } catch (e) {
@@ -97,8 +102,9 @@ export default function SupportPage() {
       cell: ({ row }) => <span className="font-mono text-xs">{row.original.id.slice(0, 8)}</span>
     },
     {
-      accessorKey: "userEmail",
-      header: "User Email",
+      accessorKey: "userId",
+      header: "User ID",
+      cell: ({ row }) => <span className="font-mono text-xs">{String(row.original.userId ?? "").slice(0, 10)}</span>
     },
     {
       accessorKey: "subject",
@@ -111,21 +117,7 @@ export default function SupportPage() {
       cell: ({ row }) => {
         const s = row.original.status;
         return (
-          <Badge variant={s === 'Resolved' ? 'default' : s === 'In Progress' ? 'secondary' : 'outline'}>
-            {s}
-          </Badge>
-        );
-      }
-    },
-    {
-      accessorKey: "priority",
-      header: "Priority",
-      cell: ({ row }) => {
-        const p = row.original.priority;
-        return (
-          <Badge variant={p === 'High' ? 'destructive' : 'outline'} className={p === 'Medium' ? 'bg-orange-100 text-orange-800 hover:bg-orange-100/80 border-transparent dark:bg-orange-900/30 dark:text-orange-400' : ''}>
-            {p}
-          </Badge>
+          <Badge variant={statusVariant(s)}>{statusLabel(s)}</Badge>
         );
       }
     },
@@ -159,9 +151,9 @@ export default function SupportPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-[400px]">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="All">All</TabsTrigger>
-            <TabsTrigger value="Pending">Pending</TabsTrigger>
-            <TabsTrigger value="In Progress">Active</TabsTrigger>
-            <TabsTrigger value="Resolved">Resolved</TabsTrigger>
+            <TabsTrigger value="open">Open</TabsTrigger>
+            <TabsTrigger value="in_progress">Active</TabsTrigger>
+            <TabsTrigger value="resolved">Resolved</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -226,7 +218,7 @@ export default function SupportPage() {
           <SheetHeader className="mb-6">
             <SheetTitle>Ticket #{selectedTicket?.id.slice(0, 8)}</SheetTitle>
             <SheetDescription>
-              Submitted by {selectedTicket?.userEmail}
+              Submitted by user {selectedTicket?.userId}
             </SheetDescription>
           </SheetHeader>
           
@@ -244,31 +236,21 @@ export default function SupportPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Priority</h4>
-                  <Badge variant={selectedTicket.priority === 'High' ? 'destructive' : 'outline'}>
-                    {selectedTicket.priority}
-                  </Badge>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Current Status</h4>
-                  <Badge variant={selectedTicket.status === 'Resolved' ? 'default' : selectedTicket.status === 'In Progress' ? 'secondary' : 'outline'}>
-                    {selectedTicket.status}
-                  </Badge>
-                </div>
+              <div>
+                <h4 className="text-sm font-medium mb-1">Current Status</h4>
+                <Badge variant={statusVariant(selectedTicket.status)}>{statusLabel(selectedTicket.status)}</Badge>
               </div>
 
               <div className="space-y-2 pt-4 border-t">
                 <Label htmlFor="status">Update Status</Label>
-                <Select value={ticketStatus} onValueChange={(val: any) => setTicketStatus(val)}>
+                <Select value={ticketStatus} onValueChange={(val) => setTicketStatus(val as TicketStatus)}>
                   <SelectTrigger id="status">
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Pending">Pending</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Resolved">Resolved</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

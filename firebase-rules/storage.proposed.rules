@@ -1,0 +1,33 @@
+// OPTIONAL / HIGHER RISK — not required for the admin panel to work.
+//
+// LIVE today (storage.live-baseline.rules): any signed-in user can read AND write every file.
+// That means any app user could overwrite banners, trainer photos or certificates.
+//
+// This proposal enumerates known paths. It is NOT yet safe to publish blindly because other
+// clients may write paths we could not find (the old Flutter admin's upload_service.dart takes
+// arbitrary paths). Before publishing: grep every app for storage paths, add the missing ones,
+// and test uploads from each app. Roll back from Rules > History if anything breaks.
+//
+// Overlapping `match` blocks are OR-ed, so the old catch-all must be REMOVED for any tightening.
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function isStaff() {
+      return signedIn() && (request.auth.token.admin == true
+        || (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+            && firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.role in ['superadmin', 'admin', 'ops']));
+    }
+
+    // Admin panel uploads
+    match /banners/{allPaths=**}  { allow read: if true; allow write: if isStaff(); }
+    match /landing/{allPaths=**}  { allow read: if true; allow write: if isStaff(); }
+    match /trainers/{trainerId}/{allPaths=**} { allow read: if signedIn(); allow write: if isStaff(); }
+
+    // Trainer app uploads (paths found in threereps_trainer)
+    match /profiles/{file}                 { allow read: if signedIn(); allow write: if signedIn(); }
+    match /trainers_onboarding/{allPaths=**} { allow read: if signedIn(); allow write: if signedIn(); }
+
+    // TODO: add any other path your apps write, then everything else is denied by default.
+  }
+}

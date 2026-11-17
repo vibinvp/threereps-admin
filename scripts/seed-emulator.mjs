@@ -31,7 +31,7 @@ for (const [email, role, name] of accounts) {
   const uid = await user(email, 'localdev-pass-1');
   await put(`admins/${uid}`, { email, role, name, isActive: true });
 }
-await put('support_tickets/t1', { userEmail: 'u@x.com', subject: 'App crash on booking', status: 'Pending', priority: 'High' });
+await put('support_requests/t1', { userId: 'user_demo_1', subject: 'App crash on booking', description: 'It closes when I tap Pay', status: 'open' });
 await put('ledger/l1', { transactionId: 'txn_demo_0001', type: 'credit', amount: 1500, userId: 'user_demo_1', status: 'failed', description: 'Subscription' });
 await put('payment_sessions/ps1', { razorpayPaymentId: 'pay_demo_1', razorpayOrderId: 'order_demo_1', userId: 'user_demo_1', amount: 1500, status: 'Captured' });
 await put('bookings/b1', { paymentId: 'pay_demo_1', orderId: 'order_demo_1', amount: 150000, bookingReference: 'REF-DEMO', paymentSnapshot: { amount: 150000 } });

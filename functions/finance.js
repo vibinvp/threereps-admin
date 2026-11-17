@@ -10,7 +10,8 @@ exports.init = (deps) => {
   requireRole = deps.requireRole;
 };
 
-const TICKET_STATUSES = ["Pending", "In Progress", "Resolved"];
+// Matches the user app, which writes support_requests with status "open".
+const TICKET_STATUSES = ["open", "in_progress", "resolved"];
 
 function cleanText(value, max, field) {
   if (value == null) return "";
@@ -34,7 +35,7 @@ exports.adminUpdateSupportTicket = onCall(async (request) => {
   const notes = cleanText(adminNotes, 5000, "adminNotes");
 
   const db = admin.firestore();
-  const ref = db.collection("support_tickets").doc(ticketId);
+  const ref = db.collection("support_requests").doc(ticketId);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Ticket not found");
   const before = snap.data();
@@ -48,7 +49,7 @@ exports.adminUpdateSupportTicket = onCall(async (request) => {
 
   await writeAuditLog(db, {
     action: "support_ticket_updated",
-    entityType: "support_ticket",
+    entityType: "support_request",
     entityId: ticketId,
     adminUid: who.uid,
     adminIdentity: who,
